@@ -1,0 +1,4 @@
+RemoteKey 0.1.0 MVP
+Protocol version: 1
+Android package: com.datpt.remotekey
+Default TCP port: 45892
