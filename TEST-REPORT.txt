@@ -1,0 +1,16 @@
+RemoteKey 0.1.0 test report
+
+Passed:
+- Python syntax compilation for RemoteKeyAgent.py and test clients.
+- Keymap unit tests for Alt, Tab, Windows, Ctrl, Shift, F1-F12, A-Z and 0-9.
+- Numpad Enter extended-key mapping.
+- End-to-end TCP protocol test for Alt+Tab:
+  Left Alt DOWN -> Tab DOWN -> Tab UP -> Left Alt UP.
+- Disconnect path releases all tracked pressed keys.
+
+Not executed in this environment:
+- Android Gradle/APK compilation (Android SDK is not installed and binary downloads are unavailable).
+- Windows SendInput injection on a real Windows desktop.
+- PyInstaller Windows EXE build.
+
+The project includes Windows scripts to perform those builds locally.
