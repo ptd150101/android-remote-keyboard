@@ -1,0 +1,12 @@
+.gradle/
+.tools/
+local.properties
+**/build/
+**/__pycache__/
+*.pyc
+*.log
+*.spec
+windows-agent/dist/
+windows-agent/build/
+dist/*
+!dist/.gitkeep
