@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">RemoteKey</string>
+    <string name="accessibility_description">Chuyển sự kiện bàn phím vật lý từ Android sang máy tính Windows trong mạng nội bộ.</string>
+</resources>
