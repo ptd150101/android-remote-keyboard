@@ -4,22 +4,55 @@ $ProjectRoot = Split-Path -Parent $Root
 $OutputRoot = Join-Path $ProjectRoot "dist\windows-agent"
 New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
 
-if (Get-Command py -ErrorAction SilentlyContinue) {
-    $PythonExe = "py"
-    $PythonPrefix = @("-3")
-} elseif (Get-Command python -ErrorAction SilentlyContinue) {
-    $PythonExe = "python"
-    $PythonPrefix = @()
-} else {
-    throw "Python 3 was not found. Install Python 3 and run this script again."
+function Resolve-Uv {
+    $command = Get-Command uv -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
+    }
+
+    Write-Host "uv was not found. Installing uv..." -ForegroundColor Yellow
+
+    $previousNoModifyPath = $env:UV_NO_MODIFY_PATH
+    $env:UV_NO_MODIFY_PATH = "1"
+    try {
+        $installer = Invoke-RestMethod -UseBasicParsing -Uri "https://astral.sh/uv/install.ps1"
+        Invoke-Expression $installer
+    } finally {
+        if ($null -eq $previousNoModifyPath) {
+            Remove-Item Env:UV_NO_MODIFY_PATH -ErrorAction SilentlyContinue
+        } else {
+            $env:UV_NO_MODIFY_PATH = $previousNoModifyPath
+        }
+    }
+
+    $candidates = @(
+        "$env:USERPROFILE\.local\bin\uv.exe",
+        "$env:USERPROFILE\.cargo\bin\uv.exe"
+    )
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+
+    $command = Get-Command uv -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
+    }
+
+    throw "uv installation completed, but uv.exe could not be found. Open a new terminal and run this script again."
 }
+
+$UvExe = Resolve-Uv
+Write-Host "Using uv: $UvExe"
 
 Push-Location $Root
 try {
-    & $PythonExe @PythonPrefix -m pip install --upgrade pyinstaller
-    if ($LASTEXITCODE -ne 0) { throw "Failed to install PyInstaller." }
+    & $UvExe sync
+    if ($LASTEXITCODE -ne 0) { throw "uv sync failed." }
 
-    & $PythonExe @PythonPrefix -m PyInstaller `
+    & $UvExe run --no-sync pyinstaller `
         --noconfirm `
         --clean `
         --onefile `
