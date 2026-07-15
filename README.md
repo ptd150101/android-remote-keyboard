@@ -21,15 +21,42 @@ RemoteKeyAgent trên Windows
 Windows / game / ứng dụng đang remote
 ```
 
+## Quản lý Python bằng uv
+
+Phần Windows agent dùng `uv` và khai báo dependency trong:
+
+```text
+windows-agent/pyproject.toml
+```
+
+`PyInstaller` chỉ là dependency build trong nhóm `dev`; agent lúc chạy chỉ dùng Python standard library.
+
+Script `windows-agent/build-agent.ps1` sẽ tự cài `uv` bằng standalone installer nếu máy chưa có, sau đó chạy:
+
+```powershell
+uv sync
+uv run --no-sync pyinstaller ...
+```
+
+Lần `uv sync` đầu tiên sẽ tạo `windows-agent/uv.lock`. Nên commit file này sau khi build thành công để khóa toàn bộ dependency chuyển tiếp.
+
 ## Cài và chạy agent Windows
 
-### Cách nhanh, chưa cần đóng gói EXE
+### Chạy source bằng uv, chưa cần đóng gói EXE
 
-1. Cài Python 3.11 trở lên.
-2. Mở `windows-agent/agent_config.json` và đổi `token`.
-3. Chạy `windows-agent/start-agent.bat`.
-4. Khi Windows Firewall hỏi, chỉ cho phép mạng **Private**.
-5. Agent sẽ in địa chỉ `LAN IP`, cổng và token ra cửa sổ.
+```powershell
+cd .\windows-agent
+uv sync
+uv run python .\RemoteKeyAgent.py
+```
+
+Sau đó:
+
+1. Mở `windows-agent/agent_config.json` và đổi `token`.
+2. Khi Windows Firewall hỏi, chỉ cho phép mạng **Private**.
+3. Agent sẽ in địa chỉ `LAN IP`, cổng và token ra cửa sổ.
+
+Có thể chạy `windows-agent/start-agent.bat`; file này ưu tiên `RemoteKeyAgent.exe`, nếu chưa có EXE thì chạy source qua `uv`.
 
 Nên chạy `start-agent-admin.bat` nếu cần điều khiển ứng dụng đang chạy quyền Administrator.
 
@@ -47,7 +74,7 @@ Kết quả:
 dist/windows-agent/RemoteKeyAgent.exe
 ```
 
-Script chỉ dùng PyInstaller lúc build. File EXE sau đó không cần cài Python.
+Script dùng môi trường `.venv` do `uv` quản lý. File EXE sau đó không cần cài Python hoặc uv.
 
 ### Mở firewall thủ công
 
@@ -83,6 +110,23 @@ Có thể cài bằng cách chép APK sang Android, hoặc bật USB debugging r
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\android-app\install-apk.ps1
+```
+
+## Build cả APK và EXE
+
+Tại thư mục gốc repo, chạy:
+
+```powershell
+.\BUILD-NOW.bat
+```
+
+Kết quả nằm trong:
+
+```text
+dist/
+├── RemoteKey-debug.apk
+└── windows-agent/
+    └── RemoteKeyAgent.exe
 ```
 
 ## Cấu hình Android
@@ -129,13 +173,14 @@ Phím không có trong keymap sẽ được ghi vào `RemoteKeyAgent.log` dướ
 Chạy agent ở chế độ không inject phím:
 
 ```powershell
-python .\windows-agent\RemoteKeyAgent.py --dry-run --verbose
+cd .\windows-agent
+uv run python .\RemoteKeyAgent.py --dry-run --verbose
 ```
 
-Mở terminal khác:
+Mở terminal khác tại thư mục gốc repo:
 
 ```powershell
-python .\tools\test_client.py
+uv run --project .\windows-agent python .\tools\test_client.py
 ```
 
 Agent phải ghi thứ tự:
