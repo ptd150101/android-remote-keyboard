@@ -11,13 +11,13 @@ if (Get-Command py -ErrorAction SilentlyContinue) {
     $PythonExe = "python"
     $PythonPrefix = @()
 } else {
-    throw "Không tìm thấy Python 3. Hãy cài Python rồi chạy lại."
+    throw "Python 3 was not found. Install Python 3 and run this script again."
 }
 
 Push-Location $Root
 try {
     & $PythonExe @PythonPrefix -m pip install --upgrade pyinstaller
-    if ($LASTEXITCODE -ne 0) { throw "Cài PyInstaller thất bại." }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to install PyInstaller." }
 
     & $PythonExe @PythonPrefix -m PyInstaller `
         --noconfirm `
@@ -26,7 +26,7 @@ try {
         --console `
         --name RemoteKeyAgent `
         RemoteKeyAgent.py
-    if ($LASTEXITCODE -ne 0) { throw "Build EXE thất bại." }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to build the Windows EXE." }
 
     Copy-Item -Force "dist\RemoteKeyAgent.exe" $OutputRoot
     Copy-Item -Force "agent_config.json", "start-agent.bat", "start-agent-admin.bat", "add-firewall-rule.ps1" $OutputRoot
@@ -34,4 +34,4 @@ try {
     Pop-Location
 }
 
-Write-Host "Đã tạo: $OutputRoot\RemoteKeyAgent.exe" -ForegroundColor Green
+Write-Host "Created: $OutputRoot\RemoteKeyAgent.exe" -ForegroundColor Green
