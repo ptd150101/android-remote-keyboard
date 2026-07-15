@@ -17,7 +17,7 @@ function Resolve-JavaHome {
     foreach ($candidate in $candidates) {
         if (Test-Path (Join-Path $candidate "bin\java.exe")) { return $candidate }
     }
-    throw "Không tìm thấy Java. Hãy cài Android Studio hoặc JDK 17 trở lên."
+    throw "Java was not found. Install Android Studio or JDK 17 or newer."
 }
 
 function Resolve-AndroidSdk {
@@ -44,7 +44,7 @@ $env:ANDROID_HOME = $SdkRoot
 
 $SdkManager = Join-Path $SdkRoot "cmdline-tools\latest\bin\sdkmanager.bat"
 if (-not (Test-Path $SdkManager)) {
-    Write-Host "Đang tải Android command-line tools..."
+    Write-Host "Downloading Android command-line tools..."
     $zip = Join-Path $ToolsRoot "commandlinetools.zip"
     Invoke-WebRequest -UseBasicParsing `
         -Uri "https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip" `
@@ -59,9 +59,10 @@ if (-not (Test-Path $SdkManager)) {
     Move-Item (Join-Path $extract "cmdline-tools") $latest
 }
 
-Write-Host "Đang cài Android SDK platform/build-tools nếu còn thiếu..."
+Write-Host "Installing required Android SDK packages..."
 1..20 | ForEach-Object { "y" } | & $SdkManager --licenses | Out-Null
 & $SdkManager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+if ($LASTEXITCODE -ne 0) { throw "Failed to install Android SDK packages." }
 
 $escapedSdk = $SdkRoot.Replace("\", "\\")
 Set-Content -Encoding ASCII -Path (Join-Path $ProjectRoot "local.properties") -Value "sdk.dir=$escapedSdk"
@@ -69,7 +70,7 @@ Set-Content -Encoding ASCII -Path (Join-Path $ProjectRoot "local.properties") -V
 $GradleHome = Join-Path $ToolsRoot "gradle-8.9"
 $GradleExe = Join-Path $GradleHome "bin\gradle.bat"
 if (-not (Test-Path $GradleExe)) {
-    Write-Host "Đang tải Gradle 8.9..."
+    Write-Host "Downloading Gradle 8.9..."
     $gradleZip = Join-Path $ToolsRoot "gradle-8.9-bin.zip"
     Invoke-WebRequest -UseBasicParsing `
         -Uri "https://services.gradle.org/distributions/gradle-8.9-bin.zip" `
@@ -80,7 +81,7 @@ if (-not (Test-Path $GradleExe)) {
 Push-Location $ProjectRoot
 try {
     & $GradleExe --no-daemon :app:assembleDebug
-    if ($LASTEXITCODE -ne 0) { throw "Gradle build thất bại." }
+    if ($LASTEXITCODE -ne 0) { throw "Gradle build failed." }
 } finally {
     Pop-Location
 }
@@ -89,4 +90,4 @@ $apk = Join-Path $ProjectRoot "app\build\outputs\apk\debug\app-debug.apk"
 $output = Join-Path $DistRoot "RemoteKey-debug.apk"
 Copy-Item -Force $apk $output
 Write-Host ""
-Write-Host "Đã tạo APK: $output" -ForegroundColor Green
+Write-Host "Created APK: $output" -ForegroundColor Green
