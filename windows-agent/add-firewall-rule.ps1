@@ -22,5 +22,5 @@ New-NetFirewallRule `
     -LocalPort $Port `
     -Profile Private
 
-Write-Host "Đã cho phép TCP port $Port trên mạng Private." -ForegroundColor Green
+Write-Host "Allowed TCP port $Port on Private networks." -ForegroundColor Green
 pause
