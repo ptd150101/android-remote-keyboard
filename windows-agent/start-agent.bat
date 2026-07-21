@@ -8,7 +8,7 @@ if exist "RemoteKeyAgent.exe" (
 
 where uv >nul 2>nul
 if %errorlevel%==0 (
-  uv run python RemoteKeyAgent.py
+  uv run python RemoteKeyAgentEntry.py
   goto :eof
 )
 
