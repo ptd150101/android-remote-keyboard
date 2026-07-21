@@ -13,14 +13,26 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
     exit
 }
 
-Get-NetFirewallRule -DisplayName $RuleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-New-NetFirewallRule `
-    -DisplayName $RuleName `
-    -Direction Inbound `
-    -Action Allow `
-    -Protocol TCP `
-    -LocalPort $Port `
-    -Profile Private
+# Use netsh instead of the NetSecurity PowerShell module. Some Windows
+# installations have a missing/broken MSFT_NetFirewallRule CIM class, which
+# makes New-NetFirewallRule fail with HRESULT 0x80041010 (Invalid class).
+& netsh.exe advfirewall firewall delete rule `
+    "name=$RuleName" `
+    protocol=TCP `
+    "localport=$Port" | Out-Null
+
+& netsh.exe advfirewall firewall add rule `
+    "name=$RuleName" `
+    dir=in `
+    action=allow `
+    protocol=TCP `
+    "localport=$Port" `
+    profile=private `
+    enable=yes
+
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to add the Windows Firewall rule. netsh exit code: $LASTEXITCODE"
+}
 
 Write-Host "Allowed TCP port $Port on Private networks." -ForegroundColor Green
 pause
