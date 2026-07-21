@@ -58,7 +58,7 @@ try {
         --onefile `
         --console `
         --name RemoteKeyAgent `
-        RemoteKeyAgent.py
+        RemoteKeyAgentEntry.py
     if ($LASTEXITCODE -ne 0) { throw "Failed to build the Windows EXE." }
 
     Copy-Item -Force "dist\RemoteKeyAgent.exe" $OutputRoot
