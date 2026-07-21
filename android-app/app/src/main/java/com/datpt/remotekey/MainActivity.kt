@@ -11,12 +11,15 @@ import android.os.Looper
 import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.ViewGroup
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 
@@ -26,10 +29,24 @@ class MainActivity : Activity() {
     private lateinit var hostInput: EditText
     private lateinit var portInput: EditText
     private lateinit var tokenInput: EditText
+    private lateinit var windowsProxySpinner: Spinner
     private lateinit var captureCheck: CheckBox
     private lateinit var accessibilityStatus: TextView
     private lateinit var connectionStatus: TextView
     private lateinit var lastKeyStatus: TextView
+
+    private val windowsProxyLabels = arrayOf(
+        "Caps Lock → Windows (khuyên dùng)",
+        "Ctrl phải → Windows",
+        "Menu → Windows",
+        "Không dùng phím thay thế"
+    )
+    private val windowsProxyKeyCodes = intArrayOf(
+        KeyEvent.KEYCODE_CAPS_LOCK,
+        KeyEvent.KEYCODE_CTRL_RIGHT,
+        KeyEvent.KEYCODE_MENU,
+        KeyEvent.KEYCODE_UNKNOWN
+    )
 
     private val refreshRunnable = object : Runnable {
         override fun run() {
@@ -93,6 +110,31 @@ class MainActivity : Activity() {
             setText(prefs.getString(Prefs.TOKEN, Prefs.DEFAULT_TOKEN) ?: Prefs.DEFAULT_TOKEN)
         }
         root.addView(tokenInput, fullWidth())
+
+        root.addView(label("Phím thay thế cho Windows trên HyperOS"))
+        windowsProxySpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_item,
+                windowsProxyLabels
+            ).apply {
+                setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+
+            val savedKey = prefs.getInt(
+                Prefs.WINDOWS_PROXY_KEY,
+                Prefs.DEFAULT_WINDOWS_PROXY_KEY
+            )
+            val savedIndex = windowsProxyKeyCodes.indexOf(savedKey).let { if (it >= 0) it else 0 }
+            setSelection(savedIndex)
+        }
+        root.addView(windowsProxySpinner, fullWidth())
+
+        root.addView(TextView(this).apply {
+            text = "HyperOS giữ phím Windows/Meta cho Home và Recent apps. Khi chuyển phím đang bật, lựa chọn này sẽ được gửi sang PC như phím Windows; ví dụ Caps Lock + Tab = Windows + Tab."
+            textSize = 14f
+            setPadding(0, dp(4), 0, dp(4))
+        })
 
         val saveButton = Button(this).apply {
             text = "Lưu cấu hình"
@@ -183,11 +225,15 @@ class MainActivity : Activity() {
             return false
         }
 
+        val proxyIndex = windowsProxySpinner.selectedItemPosition
+            .coerceIn(windowsProxyKeyCodes.indices)
+
         getSharedPreferences(Prefs.FILE, Context.MODE_PRIVATE)
             .edit()
             .putString(Prefs.HOST, host)
             .putInt(Prefs.PORT, port)
             .putString(Prefs.TOKEN, token)
+            .putInt(Prefs.WINDOWS_PROXY_KEY, windowsProxyKeyCodes[proxyIndex])
             .apply()
 
         if (showToast) {
