@@ -14,6 +14,10 @@ class RemoteKeyAccessibilityService : AccessibilityService(),
     private lateinit var prefs: SharedPreferences
     private lateinit var relay: RelayConnection
 
+    private val heldModifiers = linkedSetOf<Int>()
+    private val relayedModifiers = mutableSetOf<Int>()
+    private val activeComboKeys = mutableMapOf<Int, Int>()
+
     override fun onServiceConnected() {
         super.onServiceConnected()
 
@@ -31,6 +35,7 @@ class RemoteKeyAccessibilityService : AccessibilityService(),
     override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
 
     override fun onInterrupt() {
+        resetShortcutState(releaseRemote = true)
         updateStatus("Dịch vụ bị gián đoạn")
     }
 
@@ -44,56 +49,143 @@ class RemoteKeyAccessibilityService : AccessibilityService(),
         }
 
         if (isEmergencyChord(event)) {
-            relay.releaseAll()
+            resetShortcutState(releaseRemote = true)
             prefs.edit().putBoolean(Prefs.CAPTURE_ENABLED, false).apply()
             updateLastKey("EMERGENCY: Ctrl+Alt+Shift+F12")
             return true
         }
 
-        when (event.action) {
-            KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP -> {
-                val proxyKeyCode = prefs.getInt(
-                    Prefs.WINDOWS_PROXY_KEY,
-                    Prefs.DEFAULT_WINDOWS_PROXY_KEY
-                )
-                val relayedKeyCode = if (
-                    proxyKeyCode != KeyEvent.KEYCODE_UNKNOWN && event.keyCode == proxyKeyCode
-                ) {
-                    KeyEvent.KEYCODE_META_LEFT
-                } else {
-                    event.keyCode
-                }
-
-                val originalName = KeyEvent.keyCodeToString(event.keyCode)
-                val relayedName = KeyEvent.keyCodeToString(relayedKeyCode)
-                val mapping = if (relayedKeyCode != event.keyCode) {
-                    "$originalName → $relayedName"
-                } else {
-                    originalName
-                }
-                updateLastKey(
-                    "$mapping ${if (event.action == KeyEvent.ACTION_DOWN) "DOWN" else "UP"}"
-                )
-                relay.sendKey(event, relayedKeyCode)
-                return true
-            }
-            KeyEvent.ACTION_MULTIPLE -> return true
+        if (event.action != KeyEvent.ACTION_DOWN && event.action != KeyEvent.ACTION_UP) {
+            return false
         }
 
-        return true
+        if (isRelayModifier(event.keyCode)) {
+            handleModifier(event)
+            return true
+        }
+
+        val activeModifier = activeComboKeys[event.keyCode]
+            ?: findSupportedModifier(event.keyCode)
+
+        if (activeModifier != null) {
+            handleSupportedCombo(event, activeModifier)
+            return true
+        }
+
+        // Do not let an unsupported Alt/Windows chord degrade into an unmodified
+        // key in the remote app after its modifier was consumed here.
+        if (heldModifiers.isNotEmpty()) {
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                updateLastKey("Bỏ qua tổ hợp: ${describeHeldModifiers()} + ${KeyEvent.keyCodeToString(event.keyCode)}")
+            }
+            return true
+        }
+
+        // Ordinary typing and non-system shortcuts stay on the remote app's
+        // native input path. This avoids an extra TCP relay hop and duplicate keys.
+        return false
     }
+
+    private fun handleModifier(event: KeyEvent) {
+        when (event.action) {
+            KeyEvent.ACTION_DOWN -> heldModifiers.add(event.keyCode)
+            KeyEvent.ACTION_UP -> {
+                heldModifiers.remove(event.keyCode)
+                if (relayedModifiers.remove(event.keyCode)) {
+                    relay.sendKey(event)
+                }
+            }
+        }
+    }
+
+    private fun handleSupportedCombo(event: KeyEvent, modifierKeyCode: Int) {
+        when (event.action) {
+            KeyEvent.ACTION_DOWN -> {
+                if (relayedModifiers.add(modifierKeyCode)) {
+                    relay.sendKey(copyKeyEvent(event, KeyEvent.ACTION_DOWN, modifierKeyCode))
+                }
+                activeComboKeys[event.keyCode] = modifierKeyCode
+                relay.sendKey(event)
+                updateLastKey(shortcutName(modifierKeyCode, event.keyCode))
+            }
+
+            KeyEvent.ACTION_UP -> {
+                if (activeComboKeys.remove(event.keyCode) != null) {
+                    relay.sendKey(event)
+                }
+            }
+        }
+    }
+
+    private fun findSupportedModifier(keyCode: Int): Int? {
+        val meta = heldModifiers.firstOrNull(::isMetaKey)
+        if (meta != null && (keyCode == KeyEvent.KEYCODE_E || keyCode == KeyEvent.KEYCODE_TAB)) {
+            return meta
+        }
+
+        val alt = heldModifiers.firstOrNull(::isAltKey)
+        if (alt != null && keyCode == KeyEvent.KEYCODE_TAB) {
+            return alt
+        }
+
+        return null
+    }
+
+    private fun shortcutName(modifierKeyCode: Int, keyCode: Int): String {
+        val modifier = when {
+            isMetaKey(modifierKeyCode) -> "Windows"
+            isAltKey(modifierKeyCode) -> "Alt"
+            else -> KeyEvent.keyCodeToString(modifierKeyCode)
+        }
+        val key = KeyEvent.keyCodeToString(keyCode).removePrefix("KEYCODE_")
+        return "$modifier + $key"
+    }
+
+    private fun describeHeldModifiers(): String = heldModifiers.joinToString("+") {
+        when {
+            isMetaKey(it) -> "Windows"
+            isAltKey(it) -> "Alt"
+            else -> KeyEvent.keyCodeToString(it)
+        }
+    }
+
+    private fun copyKeyEvent(source: KeyEvent, action: Int, keyCode: Int): KeyEvent = KeyEvent(
+        source.downTime,
+        source.eventTime,
+        action,
+        keyCode,
+        0,
+        source.metaState,
+        source.deviceId,
+        0,
+        source.flags,
+        source.source
+    )
+
+    private fun isRelayModifier(keyCode: Int): Boolean = isAltKey(keyCode) || isMetaKey(keyCode)
+
+    private fun isAltKey(keyCode: Int): Boolean =
+        keyCode == KeyEvent.KEYCODE_ALT_LEFT || keyCode == KeyEvent.KEYCODE_ALT_RIGHT
+
+    private fun isMetaKey(keyCode: Int): Boolean =
+        keyCode == KeyEvent.KEYCODE_META_LEFT || keyCode == KeyEvent.KEYCODE_META_RIGHT
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
         if (!::relay.isInitialized) return
         when (key) {
-            Prefs.HOST,
-            Prefs.PORT,
-            Prefs.TOKEN,
-            Prefs.CAPTURE_ENABLED -> relay.settingsChanged()
+            Prefs.HOST, Prefs.PORT, Prefs.TOKEN, Prefs.CAPTURE_ENABLED -> {
+                if (key == Prefs.CAPTURE_ENABLED &&
+                    sharedPreferences?.getBoolean(Prefs.CAPTURE_ENABLED, false) != true
+                ) {
+                    resetShortcutState(releaseRemote = true)
+                }
+                relay.settingsChanged()
+            }
         }
     }
 
     override fun onDestroy() {
+        resetShortcutState(releaseRemote = true)
         if (::prefs.isInitialized) {
             prefs.unregisterOnSharedPreferenceChangeListener(this)
         }
@@ -101,6 +193,15 @@ class RemoteKeyAccessibilityService : AccessibilityService(),
             relay.stop()
         }
         super.onDestroy()
+    }
+
+    private fun resetShortcutState(releaseRemote: Boolean) {
+        heldModifiers.clear()
+        relayedModifiers.clear()
+        activeComboKeys.clear()
+        if (releaseRemote && ::relay.isInitialized) {
+            relay.releaseAll()
+        }
     }
 
     private fun isPhysicalKeyboardEvent(event: KeyEvent): Boolean {
