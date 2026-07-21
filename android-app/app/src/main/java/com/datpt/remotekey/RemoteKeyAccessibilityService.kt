@@ -52,11 +52,29 @@ class RemoteKeyAccessibilityService : AccessibilityService(),
 
         when (event.action) {
             KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP -> {
-                updateLastKey(
-                    "${KeyEvent.keyCodeToString(event.keyCode)} " +
-                        if (event.action == KeyEvent.ACTION_DOWN) "DOWN" else "UP"
+                val proxyKeyCode = prefs.getInt(
+                    Prefs.WINDOWS_PROXY_KEY,
+                    Prefs.DEFAULT_WINDOWS_PROXY_KEY
                 )
-                relay.sendKey(event)
+                val relayedKeyCode = if (
+                    proxyKeyCode != KeyEvent.KEYCODE_UNKNOWN && event.keyCode == proxyKeyCode
+                ) {
+                    KeyEvent.KEYCODE_META_LEFT
+                } else {
+                    event.keyCode
+                }
+
+                val originalName = KeyEvent.keyCodeToString(event.keyCode)
+                val relayedName = KeyEvent.keyCodeToString(relayedKeyCode)
+                val mapping = if (relayedKeyCode != event.keyCode) {
+                    "$originalName → $relayedName"
+                } else {
+                    originalName
+                }
+                updateLastKey(
+                    "$mapping ${if (event.action == KeyEvent.ACTION_DOWN) "DOWN" else "UP"}"
+                )
+                relay.sendKey(event, relayedKeyCode)
                 return true
             }
             KeyEvent.ACTION_MULTIPLE -> return true
@@ -68,7 +86,10 @@ class RemoteKeyAccessibilityService : AccessibilityService(),
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
         if (!::relay.isInitialized) return
         when (key) {
-            Prefs.HOST, Prefs.PORT, Prefs.TOKEN, Prefs.CAPTURE_ENABLED -> relay.settingsChanged()
+            Prefs.HOST,
+            Prefs.PORT,
+            Prefs.TOKEN,
+            Prefs.CAPTURE_ENABLED -> relay.settingsChanged()
         }
     }
 
