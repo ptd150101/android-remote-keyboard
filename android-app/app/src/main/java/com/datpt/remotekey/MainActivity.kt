@@ -11,15 +11,12 @@ import android.os.Looper
 import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
-import android.view.KeyEvent
 import android.view.ViewGroup
-import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 
@@ -29,24 +26,10 @@ class MainActivity : Activity() {
     private lateinit var hostInput: EditText
     private lateinit var portInput: EditText
     private lateinit var tokenInput: EditText
-    private lateinit var windowsProxySpinner: Spinner
     private lateinit var captureCheck: CheckBox
     private lateinit var accessibilityStatus: TextView
     private lateinit var connectionStatus: TextView
     private lateinit var lastKeyStatus: TextView
-
-    private val windowsProxyLabels = arrayOf(
-        "Caps Lock → Windows (khuyên dùng)",
-        "Ctrl phải → Windows",
-        "Menu → Windows",
-        "Không dùng phím thay thế"
-    )
-    private val windowsProxyKeyCodes = intArrayOf(
-        KeyEvent.KEYCODE_CAPS_LOCK,
-        KeyEvent.KEYCODE_CTRL_RIGHT,
-        KeyEvent.KEYCODE_MENU,
-        KeyEvent.KEYCODE_UNKNOWN
-    )
 
     private val refreshRunnable = object : Runnable {
         override fun run() {
@@ -74,7 +57,7 @@ class MainActivity : Activity() {
         })
 
         root.addView(TextView(this).apply {
-            text = "Chuyển bàn phím Bluetooth/USB từ Android sang Windows qua Wi-Fi LAN."
+            text = "Chỉ chuyển các tổ hợp hệ thống cần thiết sang Windows. Phím gõ bình thường do phần mềm remote xử lý."
             textSize = 16f
             setPadding(0, dp(6), 0, dp(18))
         })
@@ -111,31 +94,6 @@ class MainActivity : Activity() {
         }
         root.addView(tokenInput, fullWidth())
 
-        root.addView(label("Phím thay thế cho Windows trên HyperOS"))
-        windowsProxySpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(
-                this@MainActivity,
-                android.R.layout.simple_spinner_item,
-                windowsProxyLabels
-            ).apply {
-                setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            }
-
-            val savedKey = prefs.getInt(
-                Prefs.WINDOWS_PROXY_KEY,
-                Prefs.DEFAULT_WINDOWS_PROXY_KEY
-            )
-            val savedIndex = windowsProxyKeyCodes.indexOf(savedKey).let { if (it >= 0) it else 0 }
-            setSelection(savedIndex)
-        }
-        root.addView(windowsProxySpinner, fullWidth())
-
-        root.addView(TextView(this).apply {
-            text = "HyperOS giữ phím Windows/Meta cho Home và Recent apps. Khi chuyển phím đang bật, lựa chọn này sẽ được gửi sang PC như phím Windows; ví dụ Caps Lock + Tab = Windows + Tab."
-            textSize = 14f
-            setPadding(0, dp(4), 0, dp(4))
-        })
-
         val saveButton = Button(this).apply {
             text = "Lưu cấu hình"
             setOnClickListener { saveSettings(showToast = true) }
@@ -151,7 +109,7 @@ class MainActivity : Activity() {
         root.addView(accessibilityButton, fullWidth(top = dp(8)))
 
         captureCheck = CheckBox(this).apply {
-            text = "Bật chuyển toàn bộ bàn phím vật lý sang PC"
+            text = "Bật chuyển tổ hợp đặc biệt sang PC"
             textSize = 16f
             isChecked = prefs.getBoolean(Prefs.CAPTURE_ENABLED, false)
             setPadding(0, dp(14), 0, dp(8))
@@ -178,13 +136,19 @@ class MainActivity : Activity() {
         root.addView(captureCheck, fullWidth())
 
         root.addView(TextView(this).apply {
-            text = "Thoát khẩn cấp: giữ Ctrl + Alt + Shift rồi bấm F12. Chế độ chuyển phím sẽ tự tắt và PC được lệnh nhả toàn bộ phím."
+            text = "Hiện hỗ trợ: Alt + Tab, Windows + E và Windows + Tab. Các phím chữ, số và thao tác gõ thông thường không đi qua RemoteKey."
             textSize = 15f
             setPadding(0, dp(12), 0, dp(8))
         })
 
         root.addView(TextView(this).apply {
-            text = "Cách dùng: chạy agent trên Windows → nhập IP và token → bật RemoteKey trong Trợ năng → bật chuyển bàn phím → mở Parsec/Steam Link/StarDesk."
+            text = "Thoát khẩn cấp: giữ Ctrl + Alt + Shift rồi bấm F12."
+            textSize = 15f
+            setPadding(0, dp(4), 0, dp(8))
+        })
+
+        root.addView(TextView(this).apply {
+            text = "Cách dùng: chạy agent trên Windows → nhập IP và token → bật RemoteKey trong Trợ năng → bật chuyển tổ hợp → mở Parsec/Steam Link/StarDesk."
             textSize = 15f
         })
 
@@ -225,15 +189,11 @@ class MainActivity : Activity() {
             return false
         }
 
-        val proxyIndex = windowsProxySpinner.selectedItemPosition
-            .coerceIn(windowsProxyKeyCodes.indices)
-
         getSharedPreferences(Prefs.FILE, Context.MODE_PRIVATE)
             .edit()
             .putString(Prefs.HOST, host)
             .putInt(Prefs.PORT, port)
             .putString(Prefs.TOKEN, token)
-            .putInt(Prefs.WINDOWS_PROXY_KEY, windowsProxyKeyCodes[proxyIndex])
             .apply()
 
         if (showToast) {
@@ -247,7 +207,7 @@ class MainActivity : Activity() {
         val enabled = isAccessibilityEnabled()
         accessibilityStatus.text = "Trợ năng: ${if (enabled) "ĐÃ BẬT" else "CHƯA BẬT"}"
         connectionStatus.text = "Kết nối: ${prefs.getString(Prefs.CONNECTION_STATUS, "Chưa chạy")}"
-        lastKeyStatus.text = "Phím gần nhất: ${prefs.getString(Prefs.LAST_KEY, "—")}"
+        lastKeyStatus.text = "Tổ hợp gần nhất: ${prefs.getString(Prefs.LAST_KEY, "—")}"
 
         val savedCapture = prefs.getBoolean(Prefs.CAPTURE_ENABLED, false)
         if (captureCheck.isChecked != savedCapture) {
