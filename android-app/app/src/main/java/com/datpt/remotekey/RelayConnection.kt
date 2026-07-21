@@ -47,11 +47,11 @@ class RelayConnection(private val prefs: SharedPreferences) {
         worker?.interrupt()
     }
 
-    fun sendKey(event: KeyEvent, relayedKeyCode: Int = event.keyCode) {
+    fun sendKey(event: KeyEvent) {
         val message = JSONObject()
             .put("type", "key")
             .put("action", if (event.action == KeyEvent.ACTION_DOWN) "down" else "up")
-            .put("keyCode", relayedKeyCode)
+            .put("keyCode", event.keyCode)
             .put("scanCode", event.scanCode)
             .put("metaState", event.metaState)
             .put("repeatCount", event.repeatCount)
