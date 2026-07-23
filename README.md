@@ -1,24 +1,31 @@
 # RemoteKey
 
-RemoteKey is a small Android-to-Windows keyboard shortcut bridge designed to run alongside remote desktop and remote gaming apps such as Parsec, Steam Link, and StarDesk.
+RemoteKey is a small Android-to-Windows keyboard shortcut bridge for people who use an Android tablet as a remote desktop or remote gaming client.
 
-It does **not** relay normal typing. Letters, numbers, text editing, and ordinary shortcuts stay on the remote app's native input path. RemoteKey only intercepts selected system shortcuts that Android may otherwise handle locally, then forwards them to a Windows agent.
+It is designed to run alongside apps such as Parsec, Steam Link, StarDesk, Moonlight, or similar software.
 
-## Supported shortcuts
+## What problem does this solve?
 
-The current shortcut-only mode supports:
+When a physical Bluetooth or USB keyboard is connected to an Android tablet, normal typing is usually forwarded correctly by the remote desktop app. However, Android or the device firmware may intercept operating-system shortcuts before the remote app can send them to the Windows PC.
 
-- `Alt + Tab`
-- `Windows + E`
-- `Windows + Tab`
+Typical examples include:
 
-> Some Android vendors, especially HyperOS/MIUI devices, may consume the physical Windows/Meta key before an accessibility service can receive it. In that case, Windows-based shortcuts may remain device-dependent even though `Alt + Tab` works.
+- `Alt + Tab` switching Android applications instead of Windows applications
+- `Windows + E` being handled locally instead of opening File Explorer on the PC
+- `Windows + Tab` opening Android recent apps instead of Windows Task View
 
-## Why shortcut-only mode?
+This makes a tablet-based remote Windows session feel incomplete: text input works, but important desktop shortcuts do not reliably reach the computer.
 
-Forwarding every keystroke through a second TCP connection can add unnecessary latency, create duplicate input, and interfere with the remote app's own keyboard pipeline.
+## What does RemoteKey do?
 
-RemoteKey therefore uses two paths:
+RemoteKey adds a second, shortcut-only input path:
+
+1. An Android accessibility service watches the physical keyboard.
+2. It intercepts only selected system shortcuts.
+3. The shortcut events are sent over TCP to a small Windows agent.
+4. The Windows agent recreates the shortcut with Win32 `SendInput`.
+
+Normal typing does **not** pass through RemoteKey. Letters, numbers, text editing, and ordinary shortcuts continue to use the remote desktop app's native keyboard pipeline.
 
 ```text
 Normal typing and ordinary shortcuts
@@ -30,6 +37,65 @@ Physical keyboard -> Android AccessibilityService
                   -> RemoteKeyAgent on Windows
                   -> Win32 SendInput
 ```
+
+## Project goal
+
+The goal is not to replace the keyboard support built into Parsec, Steam Link, StarDesk, or other remote software.
+
+The goal is to complement those applications by forwarding the small set of desktop shortcuts that Android would otherwise consume locally, while keeping normal input on the lowest-latency path provided by the remote app.
+
+## Typical use case
+
+A common setup looks like this:
+
+```text
+Bluetooth/USB keyboard
+        |
+        v
+Android tablet running a remote desktop app
+        |
+        +-- normal keys ----------> remote app ----------> Windows PC
+        |
+        +-- selected shortcuts ---> RemoteKey Android ---> RemoteKeyAgent
+                                                           |
+                                                           v
+                                                     Windows SendInput
+```
+
+For example, a Redmi Pad Pro can be used as a portable Windows terminal while the actual PC remains at home or in another room. RemoteKey handles the missing desktop shortcuts without relaying every keystroke through an additional connection.
+
+## What RemoteKey is not
+
+RemoteKey is not:
+
+- a remote desktop application
+- a screen streaming application
+- a full keyboard-over-network replacement
+- a public Internet relay service
+- a way to bypass Windows secure desktop or Android firmware restrictions
+
+You still need a remote desktop or remote gaming application for video, audio, mouse input, and normal keyboard input.
+
+## Supported shortcuts
+
+The current shortcut-only mode supports:
+
+- `Alt + Tab`
+- `Windows + E`
+- `Windows + Tab`
+
+> Some Android vendors, especially HyperOS/MIUI devices, may consume the physical Windows/Meta key before an accessibility service can receive it. In that case, Windows-based shortcuts remain device-dependent even though `Alt + Tab` works.
+
+## Why shortcut-only mode?
+
+Forwarding every key through a second TCP connection would be unnecessary and could:
+
+- add extra input latency
+- create duplicate keystrokes
+- interfere with the remote application's own keyboard handling
+- produce ordering problems while typing quickly
+
+RemoteKey therefore relays only the shortcuts that need help. All other keys return immediately to Android so the active remote application can process them normally.
 
 ## Repository layout
 
@@ -60,7 +126,7 @@ BUILD-NOW.bat                Builds both the Windows agent and Android APK
 
 The Android device must be able to reach the Windows PC over:
 
-- the same LAN/Wi-Fi network, or
+- the same LAN or Wi-Fi network, or
 - a trusted private VPN such as Tailscale
 
 RemoteKey uses an unencrypted TCP connection with token authentication. Do not expose its port directly to the public Internet.
@@ -114,7 +180,7 @@ Example:
 }
 ```
 
-Change the default token before using RemoteKey on any shared network.
+Change the default token before using RemoteKey on a shared network.
 
 ### 4. Add the Windows Firewall rule
 
@@ -167,13 +233,13 @@ $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
 3. Tap **Save configuration**.
 4. Open Android Accessibility settings and enable **RemoteKey keyboard relay**.
 5. Return to the app and enable **Relay special shortcuts to PC**.
-6. Open your remote desktop or remote gaming app.
+6. Open the remote desktop or remote gaming application.
 
 Normal typing should continue through the remote app. Only the supported special shortcuts should be handled by RemoteKey.
 
 ## Xiaomi / HyperOS setup notes
 
-Sideloaded apps may be blocked from enabling accessibility services.
+Sideloaded applications may be blocked from enabling accessibility services.
 
 Open:
 
@@ -222,7 +288,7 @@ uv sync
 uv run python .\RemoteKeyAgentEntry.py
 ```
 
-Use the fixed entry point above rather than starting `RemoteKeyAgent.py` directly.
+Use `RemoteKeyAgentEntry.py` rather than starting `RemoteKeyAgent.py` directly.
 
 To control applications running as Administrator, launch the terminal or agent with Administrator privileges.
 
@@ -286,15 +352,15 @@ Pull the latest code and rebuild the Windows agent. Older builds used an incorre
 
 Check that:
 
-- the Windows agent is still running;
-- the IP address, port, and token match;
-- the PC firewall allows the configured TCP port;
-- the Android device can reach the selected LAN or VPN IP;
-- another Android client is not already connected to the agent.
+- the Windows agent is still running
+- the IP address, port, and token match
+- the PC firewall allows the configured TCP port
+- the Android device can reach the selected LAN or VPN IP
+- another Android client is not already connected to the agent
 
 ### Normal keys do not appear in the RemoteKey agent log
 
-This is expected. Normal keyboard input intentionally bypasses RemoteKey and remains on the remote app's native input path.
+This is expected. Normal keyboard input intentionally bypasses RemoteKey and remains on the remote application's native input path.
 
 ### `Windows + E` or `Windows + Tab` still opens something on Android
 
