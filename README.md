@@ -1,193 +1,325 @@
 # RemoteKey
 
-RemoteKey chuyển sự kiện bàn phím vật lý Bluetooth/USB từ Android sang máy tính Windows qua mạng LAN. Nó được thiết kế để dùng song song với Parsec, Steam Link, StarDesk hoặc phần mềm remote gaming khác.
+RemoteKey is a small Android-to-Windows keyboard shortcut bridge designed to run alongside remote desktop and remote gaming apps such as Parsec, Steam Link, and StarDesk.
 
-## Thành phần
+It does **not** relay normal typing. Letters, numbers, text editing, and ordinary shortcuts stay on the remote app's native input path. RemoteKey only intercepts selected system shortcuts that Android may otherwise handle locally, then forwards them to a Windows agent.
 
-- `android-app/`: dự án APK native Kotlin.
-- `windows-agent/`: agent Windows nhận phím và gọi Win32 `SendInput`.
-- `tools/test_client.py`: kiểm thử giao thức mà không cần Android.
-- `dist/`: nơi script build chép APK và EXE vào.
+## Supported shortcuts
 
-## Luồng hoạt động
+The current shortcut-only mode supports:
 
-```text
-Bàn phím Bluetooth/USB
-        ↓
-AccessibilityService trên Android
-        ↓ TCP LAN, JSON Lines
-RemoteKeyAgent trên Windows
-        ↓ SendInput
-Windows / game / ứng dụng đang remote
-```
+- `Alt + Tab`
+- `Windows + E`
+- `Windows + Tab`
 
-## Quản lý Python bằng uv
+> Some Android vendors, especially HyperOS/MIUI devices, may consume the physical Windows/Meta key before an accessibility service can receive it. In that case, Windows-based shortcuts may remain device-dependent even though `Alt + Tab` works.
 
-Phần Windows agent dùng `uv` và khai báo dependency trong:
+## Why shortcut-only mode?
+
+Forwarding every keystroke through a second TCP connection can add unnecessary latency, create duplicate input, and interfere with the remote app's own keyboard pipeline.
+
+RemoteKey therefore uses two paths:
 
 ```text
-windows-agent/pyproject.toml
+Normal typing and ordinary shortcuts
+Physical keyboard -> remote desktop app -> Windows
+
+Selected system shortcuts
+Physical keyboard -> Android AccessibilityService
+                  -> TCP JSON Lines
+                  -> RemoteKeyAgent on Windows
+                  -> Win32 SendInput
 ```
 
-`PyInstaller` chỉ là dependency build trong nhóm `dev`; agent lúc chạy chỉ dùng Python standard library.
-
-Script `windows-agent/build-agent.ps1` sẽ tự cài `uv` bằng standalone installer nếu máy chưa có, sau đó chạy:
-
-```powershell
-uv sync
-uv run --no-sync pyinstaller ...
-```
-
-Lần `uv sync` đầu tiên sẽ tạo `windows-agent/uv.lock`. Nên commit file này sau khi build thành công để khóa toàn bộ dependency chuyển tiếp.
-
-## Cài và chạy agent Windows
-
-### Chạy source bằng uv, chưa cần đóng gói EXE
-
-```powershell
-cd .\windows-agent
-uv sync
-uv run python .\RemoteKeyAgent.py
-```
-
-Sau đó:
-
-1. Mở `windows-agent/agent_config.json` và đổi `token`.
-2. Khi Windows Firewall hỏi, chỉ cho phép mạng **Private**.
-3. Agent sẽ in địa chỉ `LAN IP`, cổng và token ra cửa sổ.
-
-Có thể chạy `windows-agent/start-agent.bat`; file này ưu tiên `RemoteKeyAgent.exe`, nếu chưa có EXE thì chạy source qua `uv`.
-
-Nên chạy `start-agent-admin.bat` nếu cần điều khiển ứng dụng đang chạy quyền Administrator.
-
-### Đóng gói thành EXE
-
-Nhấp chuột phải `windows-agent/build-agent.ps1` → **Run with PowerShell**, hoặc chạy:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\windows-agent\build-agent.ps1
-```
-
-Kết quả:
+## Repository layout
 
 ```text
-dist/windows-agent/RemoteKeyAgent.exe
+android-app/                 Native Android app written in Kotlin
+windows-agent/               Windows receiver and SendInput injector
+tools/test_client.py         Protocol test client
+dist/                        Build output directory
+BUILD-NOW.bat                Builds both the Windows agent and Android APK
 ```
 
-Script dùng môi trường `.venv` do `uv` quản lý. File EXE sau đó không cần cài Python hoặc uv.
+## Requirements
 
-### Mở firewall thủ công
+### Android
 
-Chạy:
+- Android 8.0 or newer
+- A physical Bluetooth or USB keyboard
+- Accessibility permission for RemoteKey
+- USB debugging when installing with ADB
+
+### Windows
+
+- Windows 10 or Windows 11
+- Administrator access is recommended when controlling elevated applications
+- Python 3.11 to 3.14 only when running or building the agent from source
+
+### Network
+
+The Android device must be able to reach the Windows PC over:
+
+- the same LAN/Wi-Fi network, or
+- a trusted private VPN such as Tailscale
+
+RemoteKey uses an unencrypted TCP connection with token authentication. Do not expose its port directly to the public Internet.
+
+## Quick start
+
+### 1. Clone the repository
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\windows-agent\add-firewall-rule.ps1
+git clone https://github.com/ptd150101/android-remote-keyboard.git
+cd android-remote-keyboard
 ```
 
-## Build APK
+### 2. Build the APK and Windows agent
 
-Trên Windows, chạy:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\android-app\build-apk.ps1
-```
-
-Script sẽ:
-
-1. Dùng JDK đi kèm Android Studio hoặc `JAVA_HOME`.
-2. Tự tải Android command-line tools nếu máy chưa có SDK.
-3. Cài Android Platform 35 và Build Tools 35.0.0.
-4. Tải Gradle 8.9.
-5. Build debug APK đã ký sẵn bằng debug key.
-
-Kết quả:
-
-```text
-dist/RemoteKey-debug.apk
-```
-
-Có thể cài bằng cách chép APK sang Android, hoặc bật USB debugging rồi chạy:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\android-app\install-apk.ps1
-```
-
-## Build cả APK và EXE
-
-Tại thư mục gốc repo, chạy:
+From the repository root:
 
 ```powershell
 .\BUILD-NOW.bat
 ```
 
-Kết quả nằm trong:
+Build outputs:
 
 ```text
 dist/
 ├── RemoteKey-debug.apk
 └── windows-agent/
-    └── RemoteKeyAgent.exe
+    ├── RemoteKeyAgent.exe
+    ├── agent_config.json
+    ├── start-agent.bat
+    ├── start-agent-admin.bat
+    └── add-firewall-rule.ps1
 ```
 
-## Cấu hình Android
+### 3. Configure the Windows agent
 
-1. Mở RemoteKey.
-2. Nhập `LAN IP` của PC, cổng `45892`, và token giống `agent_config.json`.
-3. Bấm **Lưu cấu hình**.
-4. Bấm **Mở cài đặt Trợ năng** và bật dịch vụ RemoteKey.
-5. Quay lại app, bật **Chuyển toàn bộ bàn phím vật lý sang PC**.
-6. Mở Parsec, Steam Link hoặc StarDesk.
+Edit:
 
-## Thoát khẩn cấp
+```text
+dist/windows-agent/agent_config.json
+```
 
-Giữ:
+Example:
+
+```json
+{
+  "listen_host": "0.0.0.0",
+  "port": 45892,
+  "token": "replace-this-with-a-private-token",
+  "verbose": false
+}
+```
+
+Change the default token before using RemoteKey on any shared network.
+
+### 4. Add the Windows Firewall rule
+
+Open PowerShell as Administrator and run:
+
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File .\dist\windows-agent\add-firewall-rule.ps1
+```
+
+The script opens the configured TCP port for the Windows Private network profile.
+
+### 5. Start the Windows agent
+
+```powershell
+.\dist\windows-agent\start-agent-admin.bat
+```
+
+The console should display values similar to:
+
+```text
+LAN IP: 192.168.1.20
+Listening on 0.0.0.0:45892
+Token: your-private-token
+Mode: Windows SendInput
+```
+
+Keep this window open while using RemoteKey.
+
+### 6. Install the Android APK
+
+With USB debugging enabled:
+
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File .\android-app\install-apk.ps1
+```
+
+Or install directly with ADB:
+
+```powershell
+$adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+& $adb install -r -t --no-streaming ".\dist\RemoteKey-debug.apk"
+```
+
+### 7. Configure the Android app
+
+1. Open **RemoteKey**.
+2. Enter the Windows PC IP address, port, and the same token from `agent_config.json`.
+3. Tap **Save configuration**.
+4. Open Android Accessibility settings and enable **RemoteKey keyboard relay**.
+5. Return to the app and enable **Relay special shortcuts to PC**.
+6. Open your remote desktop or remote gaming app.
+
+Normal typing should continue through the remote app. Only the supported special shortcuts should be handled by RemoteKey.
+
+## Xiaomi / HyperOS setup notes
+
+Sideloaded apps may be blocked from enabling accessibility services.
+
+Open:
+
+```text
+Settings -> Apps -> Manage apps -> RemoteKey -> More
+```
+
+Then enable:
+
+```text
+Allow restricted settings
+```
+
+After that, open Accessibility settings and enable **RemoteKey keyboard relay**.
+
+When installing through ADB, HyperOS may also require these Developer options:
+
+```text
+USB debugging
+Install via USB
+USB debugging (Security settings), when available
+```
+
+## Build the Windows agent only
+
+The Windows project uses `uv` for dependency management. `PyInstaller` is a development dependency; the packaged executable does not require Python or `uv` on the target machine.
+
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File .\windows-agent\build-agent.ps1
+```
+
+Output:
+
+```text
+dist/windows-agent/RemoteKeyAgent.exe
+```
+
+The build script installs `uv` automatically when it is not already available.
+
+## Run the Windows agent from source
+
+```powershell
+cd .\windows-agent
+uv sync
+uv run python .\RemoteKeyAgentEntry.py
+```
+
+Use the fixed entry point above rather than starting `RemoteKeyAgent.py` directly.
+
+To control applications running as Administrator, launch the terminal or agent with Administrator privileges.
+
+## Build the Android APK only
+
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File .\android-app\build-apk.ps1
+```
+
+Output:
+
+```text
+dist/RemoteKey-debug.apk
+```
+
+The script uses the JDK bundled with Android Studio or `JAVA_HOME`, prepares the required Android SDK components, and builds a debug-signed APK.
+
+## Emergency stop
+
+Hold:
 
 ```text
 Ctrl + Alt + Shift + F12
 ```
 
-RemoteKey sẽ tắt capture và gửi `release_all` để tránh kẹt Ctrl, Alt, Shift hoặc Windows trên PC.
+RemoteKey disables shortcut capture and sends `release_all` to the Windows agent to reduce the risk of a stuck modifier key.
 
-## Các tổ hợp đã hỗ trợ trong keymap
+## Testing the protocol
 
-- Alt+Tab, Alt+F4.
-- Windows, Windows+D, Windows+E và các tổ hợp Windows thông thường.
-- Ctrl/Alt/Shift trái và phải.
-- F1–F12.
-- Insert, Delete, Home, End, Page Up, Page Down, phím mũi tên.
-- Numpad cơ bản.
-- Phím âm lượng và media phổ biến.
-- Chữ cái, số và dấu câu bàn phím US tiêu chuẩn.
-
-Phím không có trong keymap sẽ được ghi vào `RemoteKeyAgent.log` dưới dạng `Unsupported Android keyCode=...` để bổ sung dễ dàng.
-
-## Giới hạn kỹ thuật
-
-- `Ctrl+Alt+Delete` là Secure Attention Sequence của Windows và không thể tạo bằng `SendInput`.
-- Màn hình UAC secure desktop có thể không nhận input. Chạy agent Administrator chỉ giúp với ứng dụng elevated thông thường, không vượt secure desktop.
-- Một số firmware Android có thể giữ lại Power, Home hoặc phím hệ thống riêng trước khi AccessibilityService nhận được.
-- Dữ liệu hiện dùng TCP không mã hóa, có token xác thực. Chỉ dùng trong LAN và không mở port ra Internet.
-
-## Kiểm thử giao thức
-
-Chạy agent ở chế độ không inject phím:
+Run the agent without injecting input:
 
 ```powershell
 cd .\windows-agent
-uv run python .\RemoteKeyAgent.py --dry-run --verbose
+uv run python .\RemoteKeyAgentEntry.py --dry-run --verbose
 ```
 
-Mở terminal khác tại thư mục gốc repo:
+In another terminal, from the repository root:
 
 ```powershell
 uv run --project .\windows-agent python .\tools\test_client.py
 ```
 
-Agent phải ghi thứ tự:
+The agent should log the expected key-down and key-up sequence.
+
+## Troubleshooting
+
+### `INSTALL_FAILED_USER_RESTRICTED`
+
+Unlock the Android device, approve the installation prompt, and enable **Install via USB** in Developer options when available.
+
+### Accessibility says `App was denied access`
+
+Open the RemoteKey app information page and enable **Allow restricted settings**, then try enabling the accessibility service again.
+
+### Android connects, but the agent logs `SendInput failed` with error 87
+
+Pull the latest code and rebuild the Windows agent. Older builds used an incorrect native `INPUT` structure size on 64-bit Windows.
+
+### The Android app cannot connect
+
+Check that:
+
+- the Windows agent is still running;
+- the IP address, port, and token match;
+- the PC firewall allows the configured TCP port;
+- the Android device can reach the selected LAN or VPN IP;
+- another Android client is not already connected to the agent.
+
+### Normal keys do not appear in the RemoteKey agent log
+
+This is expected. Normal keyboard input intentionally bypasses RemoteKey and remains on the remote app's native input path.
+
+### `Windows + E` or `Windows + Tab` still opens something on Android
+
+The device firmware may reserve the Windows/Meta key before RemoteKey receives it. This is an Android vendor limitation, not a Windows agent or network error.
+
+## Technical limitations
+
+- `Ctrl + Alt + Delete` is the Windows Secure Attention Sequence and cannot be generated with `SendInput`.
+- The Windows secure desktop used by UAC may reject injected input.
+- Running the agent as Administrator helps with ordinary elevated applications but does not bypass the secure desktop.
+- Android firmware may reserve Power, Home, Meta/Windows, or vendor-specific system keys.
+- The protocol is currently unencrypted. Use it only on a trusted LAN or private VPN.
+
+## Logs
+
+The Windows agent writes logs next to the executable:
 
 ```text
-Left Alt DOWN
-Tab DOWN
-Tab UP
-Left Alt UP
+RemoteKeyAgent.log
+```
+
+Enable verbose logging in `agent_config.json` when debugging:
+
+```json
+{
+  "verbose": true
+}
 ```
